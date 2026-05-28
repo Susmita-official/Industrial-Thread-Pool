@@ -1,0 +1,6 @@
+{
+    "thread_pool": {
+        "worker_count": 4,
+        "max_queue_size": 4
+    }
+}

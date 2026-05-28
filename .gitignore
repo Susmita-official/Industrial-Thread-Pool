@@ -1,0 +1,14 @@
+# Compiler outputs
+build/
+bin/
+obj/
+
+# Local Runtime Log Files
+*.log
+error.log
+
+# Sublime Text personal configuration files
+*.sublime-workspace
+
+# OS specific hidden files
+.DS_Store
