@@ -1,0 +1,5 @@
+build/
+error.log
+.git/
+.vscode/
+*.sublime-*

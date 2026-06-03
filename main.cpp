@@ -2,6 +2,8 @@
 #include <fstream>
 #include <chrono>
 #include <sstream>
+#include <vector>
+#include <future>
 #include "ThreadPool.hpp"
 #include "json.hpp" 
 #include "Logger.hpp" 
@@ -16,7 +18,7 @@ std::string get_thread_id() {
 
 struct PoolConfig {
     size_t worker_count = 4;
-    size_t max_queue_size = 5;
+    size_t max_queue_size = 15; // Increased slightly to hold our test tasks
 };
 
 PoolConfig read_pool_configuration() {
@@ -28,80 +30,93 @@ PoolConfig read_pool_configuration() {
             file >> data;
             cfg.worker_count = data["thread_pool"]["worker_count"].get<size_t>();
             cfg.max_queue_size = data["thread_pool"]["max_queue_size"].get<size_t>();
-        } catch (...) {}
+        } catch (...) {
+            // fallback to defaults
+        }
     }
     return cfg;
 }
 
 int main() {
-    // 💡 REMOVE or make sure those temporary 'clear_log' lines are completely gone!
     PoolConfig current_cfg = read_pool_configuration();
-    std::cout << "Initial setup. Threads: " << current_cfg.worker_count 
-              << " | Max Queue Capacity: " << current_cfg.max_queue_size << std::endl;
+    std::cout << "Starting ThreadPool with " << current_cfg.worker_count << " workers...\n";
 
     ThreadPool pool(current_cfg.worker_count, current_cfg.max_queue_size);
-    // ... [keep everything else in main.cpp exactly as it was] ...
 
     for (int loop = 1; loop <= 3; ++loop) {
-        std::cout << "\n--- [Cycle " << loop << "/3] Processing Work ---" << std::endl;
+        std::cout << "\n--- [Cycle " << loop << "/3] Creating Traffic Jam ---" << std::endl;
         
+        std::vector<std::future<int>> cycle_futures;
+
         for (int i = 0; i < 10; ++i) {
             try {
-                // Simplified enqueue passing directly to standard task loop block
-                pool.enqueue([i] {
+                TaskPriority priority_level;
+                std::string priority_name;
+
+                // Tasks 0-3 are LOW priority (These grab the threads first)
+                if (i < 4) {
+                    priority_level = TaskPriority::LOW;
+                    priority_name = "LOW";
+                } 
+                // Task 9 is HIGH priority (Submitted last)
+                else if (i == 9) {
+                    priority_level = TaskPriority::HIGH;
+                    priority_name = "HIGH🚨";
+                } 
+                // Tasks 4-8 are NORMAL priority (Submitted in the middle)
+                else {
+                    priority_level = TaskPriority::NORMAL;
+                    priority_name = "NORMAL";
+                }
+
+                // Submit with priority!
+                cycle_futures.push_back(pool.submit(priority_level, [i, priority_name] {
                     std::string tid = get_thread_id();
 
                     if (i == 5) {
-                        throw std::runtime_error("Critical computational mismatch on element ID " + std::to_string(i));
+                        throw std::runtime_error("Critical failure on Task 5");
                     }
 
-                    printf("Task %d processed by Thread %s\n", i, tid.c_str());
+                    printf("Task %d [%s] processed by Thread %s\n", i, priority_name.c_str(), tid.c_str());
                     fflush(stdout); 
+                    
+                    // Sleep to keep the thread busy and force a queue to form
                     std::this_thread::sleep_for(std::chrono::milliseconds(500));
-                });
+                    
+                    return i * 10;
+                }));
             } catch (const std::exception& e) {
-                std::cerr << "❌ Submission Rejected on Task " << i << " -> " << e.what() << std::endl;
+                std::cerr << "❌ Queue Full: " << e.what() << std::endl;
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        std::cout << "All 10 tasks submitted! Waiting for completion..." << std::endl;
 
-        // 💡 NEW FEATURE: Read and print live runtime stats snapshot
-        PoolStats live_stats = pool.get_stats();
-        std::cout << "📊 [Live Monitor] Queue Depth: " << live_stats.queue_depth 
-                  << " tasks | Throughput: " << live_stats.throughput << " success/sec" << std::endl;
-
-
-        PoolConfig new_cfg = read_pool_configuration();
-        if (new_cfg.worker_count != current_cfg.worker_count) {
-            pool.reconfigure(new_cfg.worker_count);
-            current_cfg = new_cfg;
-        } else {
-            std::cout << "[Main] Checking config.json... No thread change. (Threads: " << current_cfg.worker_count << ")" << std::endl;
+        for (size_t i = 0; i < cycle_futures.size(); ++i) {
+            try {
+                int result = cycle_futures[i].get();
+            } catch (const std::exception& e) {
+                std::cerr << "⚠️ Main thread caught worker failure: " << e.what() << std::endl;
+            }
         }
-
-        std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 
-    std::cout << "\n All execution cycles complete. Closing down." << std::endl;
-
-    // 💡 NEW TELEMETRY READOUT VALUES
-    LatencyPercentiles pct = pool.get_latency_percentiles();
+    // ... end of your loops ...
 
     std::cout << "\n=============================================" << std::endl;
     std::cout << "        ENGINE PERFORMANCE METRICS           " << std::endl;
     std::cout << "=============================================" << std::endl;
+    
+    // 💡 Added the missing print statements back!
     std::cout << " Total Tasks Attempted:    " << pool.get_total_submitted() << std::endl;
     std::cout << " Total Tasks Succeeded:    " << pool.get_succeeded_count() << std::endl;
     std::cout << " Total Tasks Failed:       " << pool.get_failed_count() << std::endl;
     std::cout << " Total Tasks Rejected:     " << pool.get_rejected_count() << std::endl;
+    
+    LatencyPercentiles pct = pool.get_latency_percentiles();
     std::cout << " Average Task Latency:     " << pool.get_avg_latency_ms() << " ms" << std::endl;
-    std::cout << "---------------------------------------------" << std::endl;
-    std::cout << " P50 Latency (Median):     " << pct.p50 << " ms" << std::endl;
-    std::cout << " P95 Latency (Tail):       " << pct.p95 << " ms" << std::endl;
     std::cout << " P99 Latency (Max Outlier):" << pct.p99 << " ms" << std::endl;
     std::cout << "=============================================" << std::endl;
 
     return 0;
 }
-
