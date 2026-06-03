@@ -1,0 +1,25 @@
+name: C++ CI
+
+# The Triggers: When does the Robot Inspector wake up?
+on: [push, pull_request]
+
+jobs:
+  build:
+    # The Environment: A fresh Ubuntu Linux cloud server
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Download the code from the repository
+      - uses: actions/checkout@v3
+
+      # Step 2: Install tools (We need git for CMake to download GoogleTest)
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ git
+
+      # Step 3: Build the code exactly like you do on your machine
+      - name: Build
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+
+      # Step 4: Run the test suite! If this fails, the whole pipeline fails.
+      - name: Test
+        run: cd build && ./ThreadPoolTests

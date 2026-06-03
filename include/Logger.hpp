@@ -19,7 +19,7 @@ public:
         std::lock_guard<std::mutex> lock(log_mutex);
         
         // 💡 ABSOLUTE PATH FIX: Points explicitly to your folder. It will recreate the file automatically!
-        std::string path = "/Users/susmitapatra/Desktop/ThreadPoolProject/error.log"; 
+        std::string path = "error.log"; 
         std::ofstream log_file(path, std::ios::app); 
         
         if (log_file.is_open()) {
@@ -36,7 +36,7 @@ public:
 private:
     // Wipes old files clean exactly once when the application boots up
     ErrorLogger() {
-        std::string path = "/Users/susmitapatra/Desktop/ThreadPoolProject/error.log";
+        std::string path = "error.log";
         std::ofstream clear_file(path, std::ios::trunc);
         clear_file.close();
     }
