@@ -27,10 +27,21 @@ TEST(ThreadPoolTest, QueueFullThrows) {
     // 1 Worker TA, exactly 1 slot in the inbox tray
     ThreadPool pool(1, 1);  
 
-    // 1. Give the worker a 1-second task to keep them busy
-    pool.submit([]() { std::this_thread::sleep_for(std::chrono::seconds(1)); });
+    // 💡 NEW: A communication channel between the worker and the main thread
+    std::promise<void> worker_started;
+    std::future<void> future_started = worker_started.get_future();
 
-    // 2. Put one task in the inbox (Inbox is now full)
+    // 1. Give the worker a task, and have it signal us the exact moment it starts
+    pool.submit([&worker_started]() { 
+        worker_started.set_value(); // Signal the main thread: "I'm busy now!"
+        std::this_thread::sleep_for(std::chrono::milliseconds(500)); 
+    });
+
+    // 💡 NEW: The main thread pauses right here until the worker sends the signal
+    future_started.wait();
+
+    // 2. Now we know for a fact the worker is busy and the queue is empty.
+    // We put one task in the inbox (Inbox is now exactly full)
     pool.submit([]() { return 0; });
 
     // 3. Try to add another task. This MUST throw a runtime_error!
